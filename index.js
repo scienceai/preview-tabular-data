@@ -2,11 +2,13 @@ var path = require('path')
   , binaryCSV = require('binary-csv')
   , util = require('util')
   , Trunc = require('truncating-stream')
+  , zlib = require('zlib')
   , stream = require('stream')
   , xlsx = require('xlsx')
   , xls = require('xlsjs')
   , once = require('once')
   , CsvTsvPreview = require('./lib/csv-tsv-preview')
+  , jsonLdContextInfer = require('jsonld-context-infer')
   , split = require('split')
   , concat = require('concat-stream');
 
@@ -19,10 +21,8 @@ function previewCsvTsv(readable, contentType, contentLength, opts, callback){
 
   callback = once(callback);
 
-  var nPreview = opts.nPreview || 10;
-
   var parser = binaryCSV({separator: (contentType === 'text/csv') ? ',': '\t'});
-  var p = new CsvTsvPreview(parser, {nPreview: nPreview});
+  var p = new CsvTsvPreview(parser, opts);
 
   var s =  readable.pipe(parser).pipe(p);
   s.on('error', callback);
@@ -32,8 +32,20 @@ function previewCsvTsv(readable, contentType, contentLength, opts, callback){
       readable.destroy();
     } catch(e){}
 
-    callback(null, s.preview);
+    if(!opts.nSample){
+      callback(null, s.preview);
+    }
   });
+
+  if(opts.nSample){
+    jsonLdContextInfer(s, {nSample: opts.nSample}, function(err, schema, scores){
+      if(err){
+        return  callback(err);
+      }
+
+      callback(null, s.preview, jsonLdContextInfer.about(schema, s.preview[0]));
+    });
+  }
 
 };
 
@@ -66,24 +78,17 @@ function previewXls(readable, contentType, contentLength, opts, callback){
     var sheet = workbook.Sheets[workbook.SheetNames[0]];
 
     try {
-      var ldjson = parser.utils.sheet_to_row_object_array(sheet);
+      var csv = parser.utils.sheet_to_csv(sheet);
     } catch(e){
       return callback(e);
     }
 
-    var preview = [ Object.keys(ldjson[0]) ];
-    for(var i=0, l = Math.min(ldjson.length, nPreview); i<(l-1); i++){
-      var arr = [] //push only hasOwnproperty
-      var row = ldjson[i];
 
-      preview[0].forEach(function(key){
-        arr.push(row[key]);
-      });
-      preview.push(arr);
-    }
+    var rs = new stream.Readable();
+    rs.push(csv);
+    rs.push(null);
 
-
-    callback(null, preview);
+    previewCsvTsv(rs, 'text/csv', Buffer.byteLength(csv), opts, callback);
 
   }));
 
@@ -103,7 +108,7 @@ function previewLdJson(readable, contentType, contentLength, opts, callback){
 
   var s;
 
-  if(contentLength > maxSize){
+  if(!opts.nSample && (contentLength > maxSize)){
     var t = new Trunc({ limit : maxSize });
     s = readable.pipe(t);
     t.on('finish', function(){
@@ -120,33 +125,54 @@ function previewLdJson(readable, contentType, contentLength, opts, callback){
 
   s = s.pipe(split(function(row){
     if(row) {
-      return JSON.parse(row);
+      var prow = JSON.parse(row);
+      if(preview.length < nPreview){
+        preview.push(prow);
+      }
+      return prow;
     }
   }));
 
-  s.on('data', function(data){
-    if(preview.length < nPreview){
-      preview.push(data);
-    }
-  });
   s.on('error', callback);
-  s.on('end', function(){
-    callback(null, preview);
-  });
 
+  if(!opts.nSample){
+    s.on('end', function(){
+      callback(null, preview);
+    });
+  } else {
+    jsonLdContextInfer(s, {nSample: opts.nSample}, function(err, schema, scores){
+      if(err) return callback(err);
+      callback(null, preview, jsonLdContextInfer.about(schema));
+    });
+  }
 };
 
 
-function preview(readable, contentType, contentLength, opts, callback){
+function preview(readable, headers, opts, callback){
 
-  if(contentType === 'application/x-ldjson'){
-    previewLdJson(readable, contentType, contentLength, opts, callback);
-  } else if (contentType === 'application/vnd.ms-excel' || contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'){
-    previewXls(readable, contentType, contentLength, opts, callback);
-  } else if(contentType === 'text/csv' || contentType === 'text/tab-separated-values' ){
-    previewCsvTsv(readable, contentType, contentLength, opts, callback);
+  var encoding = headers['content-encoding'] || 'identity';
+  var decompress, dataStream;
+
+  if (encoding.match(/\bdeflate\b/)) {
+    decompress = zlib.createInflate();
+  } else if (encoding.match(/\bgzip\b/)) {
+    decompress = zlib.createGunzip();
+  }
+
+  if (decompress) {
+    dataStream = readable.pipe(decompress);
   } else {
-    callback(new Error('no preview available for ' + contentType));
+    dataStream = readable;
+  }
+
+  if(headers['content-type'] === 'application/x-ldjson'){
+    previewLdJson(dataStream, headers['content-type'], headers['content-length'], opts, callback);
+  } else if (headers['content-type'] === 'application/vnd.ms-excel' || headers['content-type'] === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'){
+    previewXls(dataStream, headers['content-type'], headers['content-length'], opts, callback);
+  } else if(headers['content-type'] === 'text/csv' || headers['content-type'] === 'text/tab-separated-values' ){
+    previewCsvTsv(dataStream, headers['content-type'], headers['content-length'], opts, callback);
+  } else {
+    callback(new Error('no preview available for ' + headers['content-type']));
   }
 
 };
