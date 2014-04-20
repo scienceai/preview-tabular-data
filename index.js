@@ -10,7 +10,6 @@ var path = require('path')
   , split = require('split')
   , concat = require('concat-stream');
 
-
 function previewCsvTsv(readable, contentType, contentLength, opts, callback){
 
   if(arguments.length === 4){
@@ -28,7 +27,11 @@ function previewCsvTsv(readable, contentType, contentLength, opts, callback){
   var s =  readable.pipe(parser).pipe(p);
   s.on('error', callback);
   s.on('finish', function(){
-    readable.destroy();
+    try{
+      readable.end();
+      readable.destroy();
+    } catch(e){}
+
     callback(null, s.preview);
   });
 
@@ -99,7 +102,10 @@ function previewLdJson(readable, contentType, contentLength, opts, callback){
     var t = new Trunc({ limit : maxSize });
     s = readable.pipe(t);
     t.on('finish', function(){
-      readable.destroy();
+      try{
+        readable.end();
+        readable.destroy();
+      } catch(e){}
     });
   } else {
     s = readable;
