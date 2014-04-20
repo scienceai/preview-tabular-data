@@ -165,14 +165,16 @@ function preview(readable, headers, opts, callback){
     dataStream = readable;
   }
 
-  if(headers['content-type'] === 'application/x-ldjson'){
-    previewLdJson(dataStream, headers['content-type'], headers['content-length'], opts, callback);
-  } else if (headers['content-type'] === 'application/vnd.ms-excel' || headers['content-type'] === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'){
-    previewXls(dataStream, headers['content-type'], headers['content-length'], opts, callback);
-  } else if(headers['content-type'] === 'text/csv' || headers['content-type'] === 'text/tab-separated-values' ){
-    previewCsvTsv(dataStream, headers['content-type'], headers['content-length'], opts, callback);
+  var ctype = headers['content-type'].split(';')[0].trim();
+
+  if(ctype === 'application/x-ldjson'){
+    previewLdJson(dataStream, ctype, headers['content-length'], opts, callback);
+  } else if (ctype === 'application/vnd.ms-excel' || ctype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'){
+    previewXls(dataStream, ctype, headers['content-length'], opts, callback);
+  } else if(ctype === 'text/csv' || ctype === 'text/tab-separated-values' ){
+    previewCsvTsv(dataStream, ctype, headers['content-length'], opts, callback);
   } else {
-    callback(new Error('no preview available for ' + headers['content-type']));
+    callback(new Error('no preview available for ' + ctype));
   }
 
 };
