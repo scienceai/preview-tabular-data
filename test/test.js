@@ -26,6 +26,15 @@ describe('preview', function(){
     });
   });
 
+  it('should preview xls', function(done){
+    fs.stat(path.join(root, 'fixtures', 'data.xls'), function(err, stats){
+      preview(fs.createReadStream(path.join(root, 'fixtures', 'data.xls')), 'application/vnd.ms-excel', stats.size, {nPreview: 2}, function(err, preview){
+        assert.deepEqual(preview[0][0], '1962' );
+        done();
+      });
+    });
+  });
+
   it('should preview ldjson', function(done){
     fs.stat(path.join(root, 'fixtures', 'data.ldjson'), function(err, stats){
       preview(fs.createReadStream(path.join(root, 'fixtures', 'data.ldjson')), 'application/x-ldjson', stats.size, {nPreview: 2}, function(err, preview){

@@ -50,9 +50,14 @@ function previewXls(readable, contentType, contentLength, opts, callback){
 
   readable.pipe(concat(function(data){
 
-    var parser = (contentType === 'application/vnd.ms-excel') ? xls: xlsx;
-
-    var workbook = parser.read(data, {type: 'binary'});
+    var parser, workbook;
+    if(contentType === 'application/vnd.ms-excel'){
+      parser = xls;
+      workbook = parser.read(data.toString('binary'), {type: 'binary'});
+    } else {
+      parser = xlsx;
+      workbook = parser.read(data, {type: 'binary'});
+    }
 
     if(workbook.SheetNames.length>1){
       console.error('multiple sheets in a workbook');

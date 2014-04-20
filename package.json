@@ -1,6 +1,6 @@
 {
   "name": "preview-tabular-data",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Extract the first x lines of tabular dataset",
   "main": "index.js",
   "scripts": {
