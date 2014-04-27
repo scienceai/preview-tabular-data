@@ -71,6 +71,10 @@ function previewXls(readable, contentType, contentLength, opts, callback){
       workbook = parser.read(data, {type: 'binary'});
     }
 
+    if(!workbook){
+      return callback(new Error('could not parse spreadsheat'));
+    }
+
     if(workbook.SheetNames.length>1){
       console.error('multiple sheets in a workbook');
     }
