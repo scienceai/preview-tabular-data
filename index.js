@@ -63,12 +63,17 @@ function previewXls(readable, contentType, contentLength, opts, callback){
   readable.pipe(concat(function(data){
 
     var parser, workbook;
-    if(contentType === 'application/vnd.ms-excel'){
-      parser = xls;
-      workbook = parser.read(data.toString('binary'), {type: 'binary'});
-    } else {
-      parser = xlsx;
-      workbook = parser.read(data, {type: 'binary'});
+
+    try{
+      if(contentType === 'application/vnd.ms-excel'){
+        parser = xls;
+        workbook = parser.read(data.toString('binary'), {type: 'binary'});
+      } else {
+        parser = xlsx;
+        workbook = parser.read(data, {type: 'binary'});
+      }
+    } catch(e){
+      return callback(e);
     }
 
     if(!workbook){
@@ -150,7 +155,6 @@ function previewLdJson(readable, contentType, contentLength, opts, callback){
     });
   }
 };
-
 
 function preview(readable, headers, opts, callback){
 

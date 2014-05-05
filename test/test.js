@@ -70,4 +70,14 @@ describe('preview', function(){
     });
   });
 
+
+  it("should give an error but doesn't crash in case of rt mismatch", function(done){
+    fs.stat(path.join(root, 'fixtures', 'head.xls'), function(err, stats){
+      preview(fs.createReadStream(path.join(root, 'fixtures', 'head.xls')), { 'content-type': 'application/vnd.ms-excel', 'content-length': stats.size }, {nPreview: 2}, function(err, preview, about){
+        assert(err);
+        done();
+      });
+    });
+  });
+
 });
