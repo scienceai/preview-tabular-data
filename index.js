@@ -1,7 +1,6 @@
 var path = require('path')
   , csvParser = require('csv-parser')
   , util = require('util')
-  , zlib = require('zlib')
   , stream = require('stream')
   , xlsx = require('xlsx')
   , once = require('once')
