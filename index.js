@@ -1,193 +1,148 @@
 var path = require('path')
-  , binaryCSV = require('binary-csv')
+  , csvParser = require('csv-parser')
   , util = require('util')
-  , Trunc = require('truncating-stream')
   , zlib = require('zlib')
   , stream = require('stream')
   , xlsx = require('xlsx')
-  , xls = require('xlsjs')
   , once = require('once')
-  , CsvTsvPreview = require('./lib/csv-tsv-preview')
+  , ObjectStreamTruncator = require('./lib/object-stream-truncator')
   , jsonLdContextInfer = require('jsonld-context-infer')
-  , split = require('split')
+  , split2 = require('split2')
   , concat = require('concat-stream');
 
-function previewCsvTsv(readable, contentType, contentLength, opts, callback){
+function csvTsvHead(readable, contentType, opts, callback){
 
-  if(arguments.length === 4){
+  if (!callback) {
     callback = opts;
     opts = {};
   }
 
   callback = once(callback);
 
-  var parser = binaryCSV({separator: (contentType === 'text/csv') ? ',': '\t'});
-  var p = new CsvTsvPreview(parser, opts);
+  var headers;
 
-  var s =  readable.pipe(parser).pipe(p);
-  s.on('error', callback);
-  s.on('finish', function(){
-    try{
-      readable.end();
-      readable.destroy();
-    } catch(e){}
+  var parser = csvParser({separator: (contentType === 'text/csv') ? ',' : '\t' });
 
-    if(!opts.nSample){
-      callback(null, s.preview);
+  var sampler = new ObjectStreamTruncator(opts);
+
+  var s =  readable
+        .pipe(parser)
+        .pipe(sampler)
+        .on('error', callback)
+        .on('headers', function(data) {
+          console.log(data);
+          headers = data;
+        })
+        .on('finish', function() {
+          try {
+            readable.end();
+            readable.destroy();
+          } catch(e){}
+        });
+
+  jsonLdContextInfer(s, {nSample: opts.nSample || Infinity}, function(err, schema, scores){
+    if (err) {
+      return callback(err);
     }
+
+    callback(null, s.head, jsonLdContextInfer.about(schema, headers));
   });
-
-  if(opts.nSample){
-    jsonLdContextInfer(s, {nSample: opts.nSample}, function(err, schema, scores){
-      if(err){
-        return  callback(err);
-      }
-
-      callback(null, s.preview, jsonLdContextInfer.about(schema, s.preview[0]));
-    });
-  }
 
 };
 
-function previewXls(readable, contentType, contentLength, opts, callback){
+function xlsxHead(readable, contentType, opts, callback){
 
-  if(arguments.length === 4){
+  if (!callback) {
     callback = opts;
     opts = {};
   }
 
   callback = once(callback);
 
-  var nPreview = opts.nPreview || 10;
-
   readable.pipe(concat(function(data){
 
-    var parser, workbook;
+    var workbook;
 
     try{
-      if(contentType === 'application/vnd.ms-excel'){
-        parser = xls;
-        workbook = parser.read(data.toString('binary'), {type: 'binary'});
-      } else {
-        parser = xlsx;
-        workbook = parser.read(data, {type: 'binary'});
-      }
+      workbook = xlsx.read(data.toString('binary'), {type: 'binary'});
     } catch(e){
       return callback(e);
     }
 
-    if(!workbook){
+    if (!workbook) {
       return callback(new Error('could not parse spreadsheat'));
     }
 
-    if(workbook.SheetNames.length>1){
+    if (workbook.SheetNames.length>1) {
       console.error('multiple sheets in a workbook');
     }
 
     var sheet = workbook.Sheets[workbook.SheetNames[0]];
 
     try {
-      var csv = parser.utils.sheet_to_csv(sheet);
+      var csv = xlsx.utils.sheet_to_csv(sheet);
     } catch(e){
       return callback(e);
     }
-
 
     var rs = new stream.Readable();
     rs.push(csv);
     rs.push(null);
 
-    previewCsvTsv(rs, 'text/csv', Buffer.byteLength(csv), opts, callback);
-
+    csvTsvHead(rs, 'text/csv', opts, callback);
   }));
 
 };
 
-function previewLdJson(readable, contentType, contentLength, opts, callback){
+function ndJsonHead(readable, contentType, opts, callback){
 
-  if(arguments.length === 4){
+  if (!callback) {
     callback = opts;
     opts = {};
   }
 
   callback = once(callback);
 
-  var maxSize = opts.maxSize || 1024000;
-  var nPreview = opts.nPreview || 10;
+  var parser = split2(JSON.parse);
+  var sampler = new ObjectStreamTruncator(opts);
 
-  var s;
+  var s = readable
+        .pipe(parser)
+        .pipe(sampler)
+        .on('error', callback)
+        .on('finish', function() {
+          try {
+            readable.end();
+            readable.destroy();
+          } catch(e){}
+        });
 
-  if(!opts.nSample && (contentLength > maxSize)){
-    var t = new Trunc({ limit : maxSize });
-    s = readable.pipe(t);
-    t.on('finish', function(){
-      try{
-        readable.end();
-        readable.destroy();
-      } catch(e){}
-    });
-  } else {
-    s = readable;
-  }
+  jsonLdContextInfer(s, {nSample: opts.nSample || Infinity}, function(err, schema, scores){
+    if(err) return callback(err);
+    callback(null, s.head, jsonLdContextInfer.about(schema));
+  });
 
-  var preview = [];
-
-  s = s.pipe(split(function(row){
-    if(row) {
-      var prow = JSON.parse(row);
-      if(preview.length < nPreview){
-        preview.push(prow);
-      }
-      return prow;
-    }
-  }));
-
-  s.on('error', callback);
-
-  if(!opts.nSample){
-    s.on('end', function(){
-      callback(null, preview);
-    });
-  } else {
-    jsonLdContextInfer(s, {nSample: opts.nSample}, function(err, schema, scores){
-      if(err) return callback(err);
-      callback(null, preview, jsonLdContextInfer.about(schema));
-    });
-  }
 };
 
-function preview(readable, headers, opts, callback){
 
-  var encoding = headers['content-encoding'] || 'identity';
-  var decompress, dataStream;
+function head(readable, contentType, opts, callback){
+  opts = opts || {nHead: Infinity, nSample: Infinity};
 
-  if (encoding.match(/\bdeflate\b/)) {
-    decompress = zlib.createInflate();
-  } else if (encoding.match(/\bgzip\b/)) {
-    decompress = zlib.createGunzip();
-  }
+  contentType = contentType.split(';')[0].trim();
 
-  if (decompress) {
-    dataStream = readable.pipe(decompress);
+  if (contentType === 'application/x-ndjson') {
+    ndJsonHead(readable, contentType, opts, callback);
+  } else if (contentType === 'application/vnd.ms-excel' || contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+    xlsxHead(readable, contentType, opts, callback);
+  } else if(contentType === 'text/csv' || contentType === 'text/tab-separated-values' ) {
+    csvTsvHead(readable, contentType, opts, callback);
   } else {
-    dataStream = readable;
-  }
-
-  var ctype = headers['content-type'].split(';')[0].trim();
-
-  if(ctype === 'application/x-ldjson'){
-    previewLdJson(dataStream, ctype, headers['content-length'], opts, callback);
-  } else if (ctype === 'application/vnd.ms-excel' || ctype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'){
-    previewXls(dataStream, ctype, headers['content-length'], opts, callback);
-  } else if(ctype === 'text/csv' || ctype === 'text/tab-separated-values' ){
-    previewCsvTsv(dataStream, ctype, headers['content-length'], opts, callback);
-  } else {
-    callback(new Error('no preview available for ' + ctype));
+    callback(new Error('no preview available for ' + contentType));
   }
 
 };
 
-exports.preview = preview;
-exports.csvTsv = previewCsvTsv;
-exports.ldjson = previewLdJson;
-exports.xls = previewXls;
+exports.head = head;
+exports.csvTsv = csvTsvHead;
+exports.ndjson = ndJsonHead;
+exports.xlsx = xlsxHead;

@@ -1,4 +1,4 @@
 preview-tabular-data
 ====================
 
-Extract the first x lines of tabular dataset
+Extract the first n lines of tabular dataset.
