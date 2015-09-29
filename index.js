@@ -44,7 +44,7 @@ function csvTsvHead(readable, contentType, opts, callback){
       return callback(err);
     }
 
-    callback(null, s.head, jsonLdContextInfer.about(schema, headers));
+    callback(null, s.head, jsonLdContextInfer.columns(schema, headers));
   });
 
 };
@@ -118,7 +118,7 @@ function ndJsonHead(readable, contentType, opts, callback){
 
   jsonLdContextInfer(s, {nSample: opts.nSample || Infinity}, function(err, schema, scores){
     if(err) return callback(err);
-    callback(null, s.head, jsonLdContextInfer.about(schema));
+    callback(null, s.head, jsonLdContextInfer.columns(schema));
   });
 
 };
