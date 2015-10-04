@@ -8,7 +8,7 @@ var root = path.dirname(__filename);
 
 describe('head', function(){
 
-  it.only('should head csv and give a columns context', function(done){
+  it('should head csv and give a columns context', function(done){
     head(fs.createReadStream(path.join(root, 'fixtures', 'data.csv')), 'text/csv', {nHead: 2, nSample:10}, function(err, head, columns){
       assert.deepEqual(head,  [ { a: '1', b: '2', c: '3' }, { a: '4', b: '', c: '6' } ]);
       assert.deepEqual(columns, [ { name: 'a', datatype: 'integer' }, { name: 'b', datatype: 'integer' }, { name: 'c', datatype: 'integer' } ]);
